@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+
+<title>noisevision</title>
+<link rel="icon" href="data:," />
+
+<style>
+
+.centered-row-flex {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+}
+
+.centered-column-flex {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+}
+
+body {
+    font-family: sans-serif;
+    line-height: 1.5;
+}
+
+.margin-5 {
+    margin: 5px;
+}
+
+#canvas {
+    border: 1px solid #000000;
+}
+
+#pause {
+    font-size: large;
+    min-width: 100px;
+}
+
+</style>
+
+<main class="centered-column-flex">
+<div class="centered-row-flex">
+<fieldset class="margin-5">
+    <legend>Geometry</legend>
+
+    <input type="radio" id="triangle" name="geometry" value="0">    <label for="triangle">Triangle</label>
+    <input type="radio" id="cube" name="geometry" value="1" checked><label for="cube">Cube</label>
+    <input type="radio" id="tesseract" name="geometry" value="2">   <label for="tesseract">Tesseract</label>
+    <input type="radio" id="torus" name="geometry" value="3">       <label for="torus">Torus</label>
+</fieldset>
+
+<fieldset class="margin-5">
+    <legend>Pixel size</legend>
+
+    <input type="radio" id="p1" name="pixel" value="800">        <label for="p1">1x1</label>
+    <input type="radio" id="p2" name="pixel" value="400" checked><label for="p2">2x2</label>
+    <input type="radio" id="p4" name="pixel" value="200">        <label for="p4">4x4</label>
+    <input type="radio" id="p8" name="pixel" value="100">        <label for="p8">8x8</label>
+</fieldset>
+</div>
+
+<div class="centered-row-flex">
+<div class="margin-5 centered-row-flex">
+    <input type="checkbox" id="debug" name="debug">
+    <label class="margin-5" for="debug">DEBUG: disable noise</label>
+</div>
+
+<div class="margin-5">
+    <input type="button" id="pause" value="Pause">
+</div>
+
+<div class="margin-5 centered-row-flex">
+    <input type="range" id="speed" name="speed" min="1" max="600" value="100" />
+    <label class="margin-5" for="speed">Speed</label>
+</div>
+</div>
+
+<canvas id="canvas" class="margin-5" width="800" height="800"></canvas>
+
+<p class="margin-5">Developed by <a href="https://github.com/pavelverigo">Pavel Verigo</a>.</p>
+<p class="margin-5">Idea from Chris Long video: <a href="https://www.youtube.com/watch?v=TdTMeNXCnTs">youtube link</a>.</p>
+<p class="margin-5">Source code: <a href="https://verigo.me">github</a>.</p>
+
+</main>
+
+<script type="module">
+
+const pause_button = document.querySelector("#pause");
+let pause = false;
+pause_button.onclick = () => {
+    pause = !pause;
+    if (pause) {
+        pause_button.value = "Continue";
+    } else {
+        pause_button.value = "Pause";
+    }
+};
+
+const wasm = await WebAssembly.instantiateStreaming(fetch("noisevision.wasm"), {});
+const wasm_add = wasm.instance.exports.add;
+const wasm_frame = wasm.instance.exports.frame;
+const wasm_start = wasm.instance.exports.start;
+const memory = wasm.instance.exports.memory;
+
+console.log(`17 + 25 = ${wasm_add(17, 25)}`);
+
+wasm_start();
+
+const canvas = document.getElementById("canvas");
+const ctx = canvas.getContext("2d");
+
+const { width, height } = canvas;
+
+// NOTE: scaling is done in js for simplicity
+const scale_canvas = document.createElement('canvas');
+scale_canvas.width = width;
+scale_canvas.height = height;
+const scale_ctx = scale_canvas.getContext('2d');
+ctx.imageSmoothingEnabled = false; // Disable blur on scaling
+
+
+function draw_frame(dt) {
+    const geometry_id = parseInt(document.querySelector("input[name=\"geometry\"]:checked").value);
+    const debug = document.querySelector('#debug').checked;
+    const speed = parseFloat(document.querySelector('#speed').value) / 10;
+    const size = parseInt(document.querySelector("input[name=\"pixel\"]:checked").value);
+
+    const ptr = wasm_frame(dt, geometry_id, debug, speed, size, pause);
+    const memory_buffer = new Uint8ClampedArray(memory.buffer, ptr, size * size * 4);
+    const small_data = new ImageData(memory_buffer, size, size);
+    scale_ctx.putImageData(small_data, 0, 0);
+    ctx.drawImage(scale_canvas, 0, 0, size, size, 0, 0, 800, 800);
+}
+
+requestAnimationFrame(animation_callback);
+let prev_time = performance.now();
+
+function animation_callback(timestamp) {
+    let cur = performance.now();
+    draw_frame(cur - prev_time);
+    prev_time = cur;
+
+    requestAnimationFrame(animation_callback);
+}
+
+</script>
